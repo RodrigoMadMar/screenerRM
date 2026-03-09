@@ -66,47 +66,47 @@ async function fetchRSS(): Promise<NewsItem[]> {
   return results;
 }
 
+function scoreHeadline(item: NewsItem): number {
+  const text = `${item.title} ${item.description ?? ''}`.toLowerCase();
+  const keywordHits = MARKET_KEYWORDS.reduce((acc, kw) => (text.includes(kw) ? acc + 1 : acc), 0);
+  const penaltyHits = GENERIC_PENALTIES.reduce((acc, kw) => (text.includes(kw) ? acc + 1 : acc), 0);
+  const tickerLike = (item.title.match(/\b[A-Z]{2,5}\b/g) ?? []).length;
+  return keywordHits * 2 + tickerLike - penaltyHits * 3;
+}
+
+function normalizeNews(items: NewsItem[]): NewsItem[] {
+  const deduped = new Map<string, NewsItem>();
+
+  for (const item of items) {
+    const title = item.title?.trim();
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, { ...item, title });
+  }
+
+  const ranked = Array.from(deduped.values())
+    .map(item => ({ item, score: scoreHeadline(item) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 60);
+
+  const strict = ranked.filter(entry => entry.score >= 1).slice(0, 50).map(entry => entry.item);
+  if (strict.length >= 12) return strict;
+
+  // Day is quiet: fallback to ranked context instead of starving Claude.
+  return ranked.slice(0, 35).map(entry => entry.item);
+}
+
 export async function fetchNews(): Promise<NewsItem[]> {
-  const normalize = (items: NewsItem[]) => {
-    const deduped = new Map<string, NewsItem>();
-
-    for (const item of items) {
-      const title = item.title?.trim();
-      if (!title) continue;
-      const key = title.toLowerCase();
-      if (!deduped.has(key)) {
-        deduped.set(key, { ...item, title });
-      }
-    }
-
-    const ranked = Array.from(deduped.values())
-      .map(item => {
-        const text = `${item.title} ${item.description ?? ''}`.toLowerCase();
-        const keywordHits = MARKET_KEYWORDS.reduce((acc, kw) => (text.includes(kw) ? acc + 1 : acc), 0);
-        const penaltyHits = GENERIC_PENALTIES.reduce((acc, kw) => (text.includes(kw) ? acc + 1 : acc), 0);
-        const tickerLike = (item.title.match(/\b[A-Z]{2,5}\b/g) ?? []).length;
-        const score = keywordHits * 2 + tickerLike - penaltyHits * 3;
-        return { item, score };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 60);
-
-    const strict = ranked.filter(entry => entry.score >= 1).slice(0, 50).map(entry => entry.item);
-    if (strict.length >= 12) return strict;
-
-    // Fallback: keep more headlines if the day is quiet, instead of starving Claude context.
-    return ranked.slice(0, 35).map(entry => entry.item);
-  };
 
   try {
     const items = await fetchMarketaux();
-    const relevant = normalize(items);
+    const relevant = normalizeNews(items);
     if (relevant.length > 0) return relevant;
   } catch {
     // fall through to RSS
   }
 
-  return normalize(await fetchRSS());
+  return normalizeNews(await fetchRSS());
 }
 
 function getYesterdayISO(): string {
