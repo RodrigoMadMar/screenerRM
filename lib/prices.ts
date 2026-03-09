@@ -14,22 +14,25 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const result = await yahooFinance.historical(symbol, {
+    const result = await yahooFinance.chart(symbol, {
       period1: startDate,
       period2: endDate,
       interval: '1d',
     });
 
-    if (!result || result.length < 20) return null;
+    const quotes = result?.quotes;
+    if (!quotes || quotes.length < 20) return null;
 
-    return result.map(bar => ({
-      date: bar.date,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      volume: bar.volume ?? 0,
-    }));
+    return quotes
+      .filter(bar => bar.open != null && bar.high != null && bar.low != null && bar.close != null)
+      .map(bar => ({
+        date: bar.date,
+        open: bar.open!,
+        high: bar.high!,
+        low: bar.low!,
+        close: bar.close!,
+        volume: bar.volume ?? 0,
+      }));
   } catch {
     return null;
   }
