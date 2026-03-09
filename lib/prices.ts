@@ -41,7 +41,7 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
 
 export async function fetchPrices(symbols: string[]): Promise<Map<string, Candle[]>> {
   const results = new Map<string, Candle[]>();
-  const unique = [...new Set(symbols)];
+  const unique = Array.from(new Set(symbols));
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
