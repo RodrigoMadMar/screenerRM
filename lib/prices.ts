@@ -1,5 +1,6 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-const yahooFinance: any = require('yahoo-finance2').default ?? require('yahoo-finance2');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import yahooFinanceModule from 'yahoo-finance2';
+const yahooFinance = yahooFinanceModule as any;
 import { Candle } from './types';
 
 const BATCH_SIZE = 5;
@@ -40,7 +41,7 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
 
 export async function fetchPrices(symbols: string[]): Promise<Map<string, Candle[]>> {
   const results = new Map<string, Candle[]>();
-  const unique = [...new Set(symbols)];
+  const unique = Array.from(new Set(symbols));
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
