@@ -12,6 +12,20 @@ interface NewsItem {
   pubDate?: string;
 }
 
+const MARKET_KEYWORDS = [
+  'fed', 'fomc', 'inflation', 'cpi', 'ppi', 'jobs', 'payroll', 'yield', 'treasury',
+  'oil', 'gas', 'gold', 'silver', 'copper', 'usd', 'dollar', 'rates', 'tariff',
+  'earnings', 'guidance', 'downgrade', 'upgrade', 'merger', 'acquisition', 'buyback',
+  'ai', 'semiconductor', 'chip', 'bank', 'credit', 'default', 'geopolitical',
+  'opec', 'sanction', 'war', 'china', 'europe', 'japan', 'russia', 'volatility',
+  'etf', 'stocks', 'equities', 'futures', 'commodities', 'crypto', 'bitcoin',
+];
+
+const GENERIC_PENALTIES = [
+  'series a', 'series b', 'seed round', 'venture capital', 'startup',
+  'private market', 'funding round', 'product launch',
+];
+
 async function fetchMarketaux(): Promise<NewsItem[]> {
   const apiKey = process.env.MARKETAUX_API_KEY;
   if (!apiKey) throw new Error('No MARKETAUX_API_KEY');
@@ -53,14 +67,46 @@ async function fetchRSS(): Promise<NewsItem[]> {
 }
 
 export async function fetchNews(): Promise<NewsItem[]> {
+  const normalize = (items: NewsItem[]) => {
+    const deduped = new Map<string, NewsItem>();
+
+    for (const item of items) {
+      const title = item.title?.trim();
+      if (!title) continue;
+      const key = title.toLowerCase();
+      if (!deduped.has(key)) {
+        deduped.set(key, { ...item, title });
+      }
+    }
+
+    const ranked = Array.from(deduped.values())
+      .map(item => {
+        const text = `${item.title} ${item.description ?? ''}`.toLowerCase();
+        const keywordHits = MARKET_KEYWORDS.reduce((acc, kw) => (text.includes(kw) ? acc + 1 : acc), 0);
+        const penaltyHits = GENERIC_PENALTIES.reduce((acc, kw) => (text.includes(kw) ? acc + 1 : acc), 0);
+        const tickerLike = (item.title.match(/\b[A-Z]{2,5}\b/g) ?? []).length;
+        const score = keywordHits * 2 + tickerLike - penaltyHits * 3;
+        return { item, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 60);
+
+    const strict = ranked.filter(entry => entry.score >= 1).slice(0, 50).map(entry => entry.item);
+    if (strict.length >= 12) return strict;
+
+    // Fallback: keep more headlines if the day is quiet, instead of starving Claude context.
+    return ranked.slice(0, 35).map(entry => entry.item);
+  };
+
   try {
     const items = await fetchMarketaux();
-    if (items.length > 0) return items;
+    const relevant = normalize(items);
+    if (relevant.length > 0) return relevant;
   } catch {
     // fall through to RSS
   }
 
-  return fetchRSS();
+  return normalize(await fetchRSS());
 }
 
 function getYesterdayISO(): string {
@@ -97,6 +143,11 @@ Include a MIX of:
 Target 15-40 total unique tickers across all themes.
 
 IMPORTANT: Output ONLY valid JSON, no markdown fences, no explanation outside JSON.
+
+STRICT TICKER RULES:
+- Recommend ONLY US-listed stocks or ETFs that are tradable in Yahoo Finance with the exact symbol.
+- Do NOT include stablecoins, token symbols, crypto pairs, private companies, or CUSIPs.
+- Prioritize liquid instruments with clear directional reaction to current macro/news catalysts.
 
 Output format:
 {
