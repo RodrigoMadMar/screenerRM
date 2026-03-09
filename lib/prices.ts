@@ -1,5 +1,6 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-const yahooFinance: any = require('yahoo-finance2').default ?? require('yahoo-finance2');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import yahooFinanceModule from 'yahoo-finance2';
+const yahooFinance = yahooFinanceModule as any;
 import { Candle } from './types';
 
 const BATCH_SIZE = 5;
