@@ -4,54 +4,68 @@ const RECENT_BARS = 5;
 
 // ─── FVG Score (max 30) ───────────────────────────────────────────────────────
 
-function scoreFVG(detection: DetectionResult, totalCandles: number): { score: number; signals: SignalBadge[] } {
+function scoreFVG(
+  detection: DetectionResult,
+  totalCandles: number,
+): { score: number; signals: SignalBadge[]; bias: 'bullish' | 'bearish' | null } {
   const openFVGs = detection.fvgs.filter(f => !f.filled);
-  if (openFVGs.length === 0) return { score: 0, signals: [] };
+  if (openFVGs.length === 0) return { score: 0, signals: [], bias: null };
 
   let raw = 0;
   const signals: SignalBadge[] = [];
-  const recentCutoff = totalCandles - RECENT_BARS;
+  const recentCutoff = totalCandles - RECENT_BARS * 3;
 
   for (const fvg of openFVGs) {
-    let pts = 8 + fvg.atrRatio * 4;
-    if (fvg.index >= recentCutoff) pts += 5;
+    let pts = 6 + fvg.atrRatio * 4;
+    if (fvg.index >= recentCutoff) pts += 4;
     raw += pts;
   }
 
   const score = Math.min(30, raw);
+  const bullishCount = openFVGs.filter(f => f.direction === 'bullish').length;
+  const bearishCount = openFVGs.length - bullishCount;
+  const directionalBias = bullishCount > bearishCount ? 'bullish' : bearishCount > bullishCount ? 'bearish' : null;
+
   signals.push({
     label: `${openFVGs.length} Open FVG${openFVGs.length > 1 ? 's' : ''}`,
     type: 'fvg',
-    detail: `${openFVGs.filter(f => f.index >= recentCutoff).length} recent, avg ${(openFVGs.reduce((s, f) => s + f.atrRatio, 0) / openFVGs.length).toFixed(2)}x ATR`,
+    detail: `${bullishCount} bull / ${bearishCount} bear, avg ${(openFVGs.reduce((sum, f) => sum + f.atrRatio, 0) / openFVGs.length).toFixed(2)}x ATR`,
   });
 
-  return { score, signals };
+  return { score, signals, bias: directionalBias };
 }
 
 // ─── Liquidity Sweep Score (max 25) ───────────────────────────────────────────
 
-function scoreSweeps(detection: DetectionResult, totalCandles: number): { score: number; signals: SignalBadge[] } {
-  if (detection.liquiditySweeps.length === 0) return { score: 0, signals: [] };
+function scoreSweeps(
+  detection: DetectionResult,
+  totalCandles: number,
+): { score: number; signals: SignalBadge[]; bias: 'bullish' | 'bearish' | null } {
+  if (detection.liquiditySweeps.length === 0) return { score: 0, signals: [], bias: null };
 
   let raw = 0;
   const signals: SignalBadge[] = [];
   const recentSweeps = detection.liquiditySweeps.filter(s => s.index >= totalCandles - RECENT_BARS * 4);
+  if (recentSweeps.length === 0) return { score: 0, signals: [], bias: null };
 
   for (const sweep of recentSweeps) {
-    const pts = 12 + sweep.reversalStrength * 8;
+    const pts = 10 + sweep.reversalStrength * 8;
     raw += pts;
   }
 
   const score = Math.min(25, raw);
   const equalCount = recentSweeps.filter(s => s.isEqualLevel).length;
+  const bullishCount = recentSweeps.filter(s => s.type === 'low').length;
+  const bearishCount = recentSweeps.filter(s => s.type === 'high').length;
+  const directionalBias = bullishCount > bearishCount ? 'bullish' : bearishCount > bullishCount ? 'bearish' : null;
 
   signals.push({
     label: `${recentSweeps.length} Liquidity Sweep${recentSweeps.length !== 1 ? 's' : ''}`,
     type: 'sweep',
-    detail: equalCount > 0 ? `${equalCount} equal-level sweep${equalCount > 1 ? 's' : ''}` : `avg reversal ${(recentSweeps.reduce((s, sw) => s + sw.reversalStrength, 0) / recentSweeps.length).toFixed(2)}`,
+    detail: `${bullishCount} bull / ${bearishCount} bear${equalCount > 0 ? `, ${equalCount} EQH/EQL` : ''}`,
   });
 
-  return { score, signals };
+  return { score, signals, bias: directionalBias };
 }
 
 // ─── BOS Score (max 25) ───────────────────────────────────────────────────────
@@ -130,28 +144,37 @@ function scoreVolume(candles: Candle[]): { score: number; signals: SignalBadge[]
 // ─── Overall Bias ─────────────────────────────────────────────────────────────
 
 function determineOverallBias(
-  bosScore: number,
-  bosBias: 'bullish' | 'bearish' | null,
-  sweepScore: number,
   detection: DetectionResult,
   macroBias: Bias,
+  fvgBias: 'bullish' | 'bearish' | null,
+  sweepBias: 'bullish' | 'bearish' | null,
+  bosBias: 'bullish' | 'bearish' | null,
 ): Bias {
-  const bullishFVGs = detection.fvgs.filter(f => !f.filled && f.direction === 'bullish').length;
-  const bearishFVGs = detection.fvgs.filter(f => !f.filled && f.direction === 'bearish').length;
-  const bullishSweeps = detection.liquiditySweeps.filter(s => s.type === 'low').length; // sweep of lows = bullish intent
-  const bearishSweeps = detection.liquiditySweeps.filter(s => s.type === 'high').length;
+  const bullishBOS = detection.breakOfStructures.filter(b => b.type === 'bullish').slice(-4).length;
+  const bearishBOS = detection.breakOfStructures.filter(b => b.type === 'bearish').slice(-4).length;
+  const bullishSweeps = detection.liquiditySweeps.filter(s => s.type === 'low').slice(-4).length;
+  const bearishSweeps = detection.liquiditySweeps.filter(s => s.type === 'high').slice(-4).length;
 
-  let bullScore = (bosBias === 'bullish' ? bosScore : 0) + bullishFVGs * 5 + bullishSweeps * 4;
-  let bearScore = (bosBias === 'bearish' ? bosScore : 0) + bearishFVGs * 5 + bearishSweeps * 4;
+  let bullScore = 0;
+  let bearScore = 0;
 
-  // Macro tiebreak
-  if (macroBias === 'bullish') bullScore += 3;
-  if (macroBias === 'bearish') bearScore += 3;
+  bullScore += bullishBOS * 6;
+  bearScore += bearishBOS * 6;
+  bullScore += bullishSweeps * 4;
+  bearScore += bearishSweeps * 4;
 
-  void sweepScore;
+  if (fvgBias === 'bullish') bullScore += 6;
+  if (fvgBias === 'bearish') bearScore += 6;
+  if (sweepBias === 'bullish') bullScore += 5;
+  if (sweepBias === 'bearish') bearScore += 5;
+  if (bosBias === 'bullish') bullScore += 8;
+  if (bosBias === 'bearish') bearScore += 8;
 
-  if (bullScore > bearScore + 5) return 'bullish';
-  if (bearScore > bullScore + 5) return 'bearish';
+  if (macroBias === 'bullish') bullScore += 2;
+  if (macroBias === 'bearish') bearScore += 2;
+
+  if (bullScore >= bearScore + 4) return 'bullish';
+  if (bearScore >= bullScore + 4) return 'bearish';
   return 'neutral';
 }
 
@@ -167,7 +190,8 @@ export function score(
   const fvgResult = scoreFVG(detection, n);
   const sweepResult = scoreSweeps(detection, n);
   const bosResult = scoreBOS(detection, n);
-  const macroResult = scoreMacro(recommendation.bias, bosResult.bias);
+  const paBias = bosResult.bias ?? sweepResult.bias ?? fvgResult.bias;
+  const macroResult = scoreMacro(recommendation.bias, paBias);
   const volumeResult = scoreVolume(candles);
 
   const scoreBreakdown: ScoreBreakdown = {
@@ -181,11 +205,11 @@ export function score(
   scoreBreakdown.total = scoreBreakdown.fvg + scoreBreakdown.sweeps + scoreBreakdown.bos + scoreBreakdown.macro + scoreBreakdown.volume;
 
   const overallBias = determineOverallBias(
-    bosResult.score,
-    bosResult.bias,
-    sweepResult.score,
     detection,
     recommendation.bias,
+    fvgResult.bias,
+    sweepResult.bias,
+    bosResult.bias,
   );
 
   const allSignals = [
