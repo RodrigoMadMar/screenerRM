@@ -136,7 +136,7 @@ Include a MIX of:
 - Leveraged ETFs (NUGT, SOXL, TQQQ, etc.)
 - Inverse ETFs when appropriate (SQQQ, DRIP, DUST, etc.)
 
-Target 15-40 total unique tickers across all themes.
+Target 15-25 total unique tickers across all themes. Prioritize liquid, US-listed instruments that definitely trade on NYSE/NASDAQ.
 
 IMPORTANT: Output ONLY valid JSON, no markdown fences, no explanation outside JSON.
 

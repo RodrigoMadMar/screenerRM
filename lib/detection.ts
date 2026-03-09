@@ -169,43 +169,31 @@ export function detectBOS(candles: Candle[], swings: SwingPoint[], atr: number):
   const highs = swings.filter(s => s.type === 'high').sort((a, b) => a.index - b.index);
   const lows = swings.filter(s => s.type === 'low').sort((a, b) => a.index - b.index);
 
-  // Track last relevant swing levels
-  let lastSwingHigh: SwingPoint | null = null;
-  let lastSwingLow: SwingPoint | null = null;
+  // Track by index (not reference) to avoid spurious re-triggers on same swing
+  let lastBrokenHighIdx = -1;
+  let lastBrokenLowIdx = -1;
 
   for (let i = 1; i < candles.length; i++) {
     const c = candles[i];
 
-    // Update swing references up to this candle
-    const latestHigh = highs.filter(s => s.index < i).slice(-1)[0];
-    const latestLow = lows.filter(s => s.index < i).slice(-1)[0];
+    // Find the most recent swing high/low formed before this candle
+    let latestHigh: SwingPoint | undefined;
+    let latestLow: SwingPoint | undefined;
+    for (const h of highs) { if (h.index < i) latestHigh = h; else break; }
+    for (const l of lows)  { if (l.index < i) latestLow  = l; else break; }
 
-    if (latestHigh && latestHigh !== lastSwingHigh) {
-      // Check bullish BOS: close above last swing high
-      if (c.close > latestHigh.price) {
-        const breakStrength = Math.min(1, (c.close - latestHigh.price) / atr);
-        bosEvents.push({
-          index: i,
-          type: 'bullish',
-          breakLevel: latestHigh.price,
-          breakStrength,
-        });
-        lastSwingHigh = latestHigh;
-      }
+    // Bullish BOS: close above a swing high we haven't already broken
+    if (latestHigh && latestHigh.index !== lastBrokenHighIdx && c.close > latestHigh.price) {
+      const breakStrength = Math.min(1, (c.close - latestHigh.price) / atr);
+      bosEvents.push({ index: i, type: 'bullish', breakLevel: latestHigh.price, breakStrength });
+      lastBrokenHighIdx = latestHigh.index;
     }
 
-    if (latestLow && latestLow !== lastSwingLow) {
-      // Check bearish BOS: close below last swing low
-      if (c.close < latestLow.price) {
-        const breakStrength = Math.min(1, (latestLow.price - c.close) / atr);
-        bosEvents.push({
-          index: i,
-          type: 'bearish',
-          breakLevel: latestLow.price,
-          breakStrength,
-        });
-        lastSwingLow = latestLow;
-      }
+    // Bearish BOS: close below a swing low we haven't already broken
+    if (latestLow && latestLow.index !== lastBrokenLowIdx && c.close < latestLow.price) {
+      const breakStrength = Math.min(1, (latestLow.price - c.close) / atr);
+      bosEvents.push({ index: i, type: 'bearish', breakLevel: latestLow.price, breakStrength });
+      lastBrokenLowIdx = latestLow.index;
     }
   }
 
