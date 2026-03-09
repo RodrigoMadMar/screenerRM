@@ -1,4 +1,5 @@
-import yahooFinance from 'yahoo-finance2';
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
+const yahooFinance: any = require('yahoo-finance2').default ?? require('yahoo-finance2');
 import { Candle } from './types';
 
 const BATCH_SIZE = 5;
@@ -14,23 +15,22 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const result = await yahooFinance.chart(symbol, {
+    const result = await yahooFinance.historical(symbol, {
       period1: startDate,
       period2: endDate,
       interval: '1d',
     });
 
-    const quotes = result?.quotes;
-    if (!quotes || quotes.length < 20) return null;
+    if (!result || result.length < 20) return null;
 
-    return quotes
-      .filter(bar => bar.open != null && bar.high != null && bar.low != null && bar.close != null)
-      .map(bar => ({
+    return result
+      .filter((bar: any) => bar.open != null && bar.high != null && bar.low != null && bar.close != null)
+      .map((bar: any) => ({
         date: bar.date,
-        open: bar.open!,
-        high: bar.high!,
-        low: bar.low!,
-        close: bar.close!,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
         volume: bar.volume ?? 0,
       }));
   } catch {
