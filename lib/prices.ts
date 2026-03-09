@@ -1,10 +1,14 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 import yahooFinanceModule from 'yahoo-finance2';
 const yahooFinance = yahooFinanceModule as any;
+
+// Suppress Yahoo Finance survey notices that can interfere with requests
+try { yahooFinance.suppressNotices(['yahooSurvey']); } catch { /* ignore */ }
+
 import { Candle } from './types';
 
 const BATCH_SIZE = 5;
-const BATCH_DELAY_MS = 500;
+const BATCH_DELAY_MS = 200;
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -16,13 +20,29 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const result = await yahooFinance.historical(symbol, {
-      period1: startDate,
-      period2: endDate,
-      interval: '1d',
-    });
+    const result = await yahooFinance.historical(
+      symbol,
+      {
+        period1: startDate,
+        period2: endDate,
+        interval: '1d',
+      },
+      {
+        validateResult: false,
+        fetchOptions: {
+          signal: AbortSignal.timeout(8000),
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        },
+      },
+    );
 
-    if (!result || result.length < 20) return null;
+    if (!result || result.length < 20) {
+      console.warn(`[prices] ${symbol}: only ${result?.length ?? 0} bars returned`);
+      return null;
+    }
 
     return result
       .filter((bar: any) => bar.open != null && bar.high != null && bar.low != null && bar.close != null)
@@ -34,7 +54,8 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
         close: bar.close,
         volume: bar.volume ?? 0,
       }));
-  } catch {
+  } catch (err) {
+    console.error(`[prices] Failed to fetch ${symbol}:`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -42,6 +63,8 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
 export async function fetchPrices(symbols: string[]): Promise<Map<string, Candle[]>> {
   const results = new Map<string, Candle[]>();
   const unique = Array.from(new Set(symbols));
+
+  console.log(`[prices] Fetching ${unique.length} tickers in batches of ${BATCH_SIZE}`);
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
@@ -59,6 +82,7 @@ export async function fetchPrices(symbols: string[]): Promise<Map<string, Candle
     }
   }
 
+  console.log(`[prices] Success: ${results.size}/${unique.length} tickers`);
   return results;
 }
 
