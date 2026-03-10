@@ -38,7 +38,10 @@ async function fetchRSS(): Promise<NewsItem[]> {
   const results: NewsItem[] = [];
   for (const feed of feeds) {
     try {
-      const parsed = await parser.parseURL(feed);
+      const parsed = await Promise.race([
+        parser.parseURL(feed),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('RSS timeout')), 5000)),
+      ]);
       results.push(...(parsed.items ?? []).slice(0, 25).map(item => ({
         title: item.title ?? '',
         description: item.contentSnippet,
@@ -97,7 +100,7 @@ Include a MIX across ALL themes:
 - Leveraged ETFs (TQQQ, SOXL, NUGT, UPRO, FNGU, etc.)
 - Inverse ETFs when appropriate (SQQQ, SPXS, DUST, DRIP, UVXY, etc.)
 
-Target 40-60 total unique tickers across all themes. Aim for 6-10 tickers per theme.
+Target 25-35 total unique tickers across all themes. Aim for 4-6 tickers per theme.
 Cover BOTH bullish AND bearish setups within the same theme when relevant.
 Prioritize liquid instruments with >$10M average daily volume that definitely trade on NYSE/NASDAQ.
 
@@ -174,7 +177,7 @@ export async function analyzeWithClaude(headlines: NewsItem[], userPrompt?: stri
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8192,
+    max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userContent }],
   });
@@ -187,7 +190,7 @@ export async function analyzeWithClaude(headlines: NewsItem[], userPrompt?: stri
     // Retry with explicit JSON instruction
     const retry = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: userContent },

@@ -29,28 +29,31 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const userPrompt: string | undefined = body?.prompt;
 
-    // ── Phase 1: Fetch news ──────────────────────────────────────────────────
-    const headlines = await fetchNews();
-
-    if (headlines.length === 0) {
-      return NextResponse.json({ error: 'No headlines available' }, { status: 503 });
-    }
-
-    // ── Phase 2: Claude macro analysis ──────────────────────────────────────
-    const macro = await analyzeWithClaude(headlines, userPrompt);
+    // ── Phase 1+2 & 3-core run in PARALLEL ──────────────────────────────────
+    // Pre-fetch core symbols while Claude is processing news — saves ~12s
+    const [macro, coreMap] = await Promise.all([
+      (async () => {
+        const headlines = await fetchNews();
+        if (headlines.length === 0) throw new Error('No headlines available');
+        return analyzeWithClaude(headlines, userPrompt);
+      })(),
+      fetchPrices(Array.from(CORE_SYMBOLS)),
+    ]);
 
     if (!macro.allTickers || macro.allTickers.length === 0) {
       return NextResponse.json({ error: 'Claude returned no tickers' }, { status: 500 });
     }
 
-    // ── Phase 3: Fetch price data ────────────────────────────────────────────
-    // Merge Claude's dynamic tickers with the core universe
+    // ── Phase 3: Fetch only the NEW dynamic tickers Claude suggested ─────────
     const dynamicSymbols = macro.allTickers.map(t => t.symbol);
-    const allSymbols = Array.from(new Set([...dynamicSymbols, ...Array.from(CORE_SYMBOLS)]));
+    const newSymbols = dynamicSymbols.filter(s => !CORE_SYMBOLS.has(s));
 
-    console.log(`[scan] ${dynamicSymbols.length} Claude tickers + ${CORE_SYMBOLS.size} core = ${allSymbols.length} total`);
+    console.log(`[scan] ${dynamicSymbols.length} Claude tickers, ${newSymbols.length} new (not in core)`);
 
-    const priceMap = await fetchPrices(allSymbols);
+    const dynamicMap = await fetchPrices(newSymbols);
+
+    // Merge core + dynamic maps
+    const priceMap = new Map([...coreMap, ...dynamicMap]);
 
     // ── Phase 4: Score each instrument ──────────────────────────────────────
     const instruments: Instrument[] = [];
