@@ -118,11 +118,11 @@ const SYSTEM_PROMPT = `You are an expert macro trader and market analyst. You wi
 1. Classify the overall macro regime: RISK-ON, RISK-OFF, NEUTRAL, or ROTATION
 2. Provide a confidence score (0-100) for your regime classification
 3. Write a 2-3 sentence macro summary
-4. Identify 3-7 distinct thematic clusters/narratives from the news
+4. Identify 4-8 distinct thematic clusters/narratives from the news
 5. For each theme, recommend specific tickers that are relevant to trade RIGHT NOW
 
 For each ticker recommendation provide:
-- symbol: The exact ticker symbol (e.g. NVDA, GDX, SOXL, SQQQ)
+- symbol: The exact ticker symbol traded on NYSE/NASDAQ (e.g. NVDA, GDX, SOXL, SQQQ). NEVER use theme names or descriptive words as symbols.
 - name: Full company/fund name
 - type: "stock", "etf", or "leveraged_etf"
 - leverage: multiplier if leveraged_etf (e.g. 3 for 3x)
@@ -130,13 +130,18 @@ For each ticker recommendation provide:
 - rationale: 1-2 sentence explanation of why this ticker is relevant NOW
 - theme: The theme name this ticker belongs to
 
-Include a MIX of:
-- Individual stocks (NVDA, XOM, JPM, etc.)
-- Regular ETFs (GDX, XLE, TLT, QQQ, etc.)
-- Leveraged ETFs (NUGT, SOXL, TQQQ, etc.)
-- Inverse ETFs when appropriate (SQQQ, DRIP, DUST, etc.)
+Include a MIX across ALL themes:
+- Individual stocks (NVDA, XOM, JPM, AAPL, TSM, META, AMZN, MSFT, etc.)
+- Sector ETFs (XLK, XLE, XLF, XLI, XLV, XLC, XLY, XLP, XLB, XLRE, XLU)
+- Broad market ETFs (SPY, QQQ, IWM, DIA, EEM, EFA, etc.)
+- Commodity/thematic ETFs (GDX, GLD, SLV, USO, UNG, ARKK, etc.)
+- Bond/rate ETFs (TLT, HYG, LQD, SHY, IEF, etc.)
+- Leveraged ETFs (TQQQ, SOXL, NUGT, UPRO, FNGU, etc.)
+- Inverse ETFs when appropriate (SQQQ, SPXS, DUST, DRIP, UVXY, etc.)
 
-Target 15-25 total unique tickers across all themes. Prioritize liquid, US-listed instruments that definitely trade on NYSE/NASDAQ.
+Target 40-60 total unique tickers across all themes. Aim for 6-10 tickers per theme.
+Cover BOTH bullish AND bearish setups within the same theme when relevant.
+Prioritize liquid instruments with >$10M average daily volume that definitely trade on NYSE/NASDAQ.
 
 IMPORTANT: Output ONLY valid JSON, no markdown fences, no explanation outside JSON.
 
@@ -216,7 +221,7 @@ export async function analyzeWithClaude(headlines: NewsItem[], userPrompt?: stri
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userContent }],
   });
@@ -229,7 +234,7 @@ export async function analyzeWithClaude(headlines: NewsItem[], userPrompt?: stri
     // Retry with explicit JSON instruction
     const retry = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: userContent },

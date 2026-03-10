@@ -7,6 +7,23 @@ import { ScanResponse, Instrument } from '@/lib/types';
 
 export const maxDuration = 60;
 
+// Core universe always scanned regardless of news — ensures the screener
+// always has baseline coverage even when Claude returns few dynamic tickers.
+const CORE_SYMBOLS = new Set([
+  // Broad market
+  'SPY', 'QQQ', 'IWM', 'DIA',
+  // Sectors
+  'XLK', 'XLE', 'XLF', 'XLI', 'XLV', 'XLC', 'XLY', 'XLP', 'XLB', 'XLRE', 'XLU',
+  // Volatility / hedges
+  'VXX', 'UVXY', 'TLT', 'HYG', 'LQD',
+  // Commodities
+  'GLD', 'SLV', 'GDX', 'USO', 'UNG',
+  // Leveraged long
+  'TQQQ', 'UPRO', 'SOXL', 'NUGT', 'FNGU',
+  // Leveraged inverse
+  'SQQQ', 'SPXS', 'DUST', 'DRIP',
+]);
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -27,15 +44,33 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Phase 3: Fetch price data ────────────────────────────────────────────
-    const symbols = macro.allTickers.map(t => t.symbol);
-    const priceMap = await fetchPrices(symbols);
+    // Merge Claude's dynamic tickers with the core universe
+    const dynamicSymbols = macro.allTickers.map(t => t.symbol);
+    const allSymbols = Array.from(new Set([...dynamicSymbols, ...Array.from(CORE_SYMBOLS)]));
+
+    console.log(`[scan] ${dynamicSymbols.length} Claude tickers + ${CORE_SYMBOLS.size} core = ${allSymbols.length} total`);
+
+    const priceMap = await fetchPrices(allSymbols);
 
     // ── Phase 4: Score each instrument ──────────────────────────────────────
     const instruments: Instrument[] = [];
 
-    for (const rec of macro.allTickers) {
-      const candles = priceMap.get(rec.symbol);
+    // Build lookup from Claude's tickers
+    const claudeTickerMap = new Map(macro.allTickers.map(t => [t.symbol, t]));
+
+    // Score every symbol we have price data for (dynamic + core)
+    for (const [symbol, candles] of Array.from(priceMap.entries())) {
       if (!candles || candles.length < 20) continue;
+
+      // Use Claude's recommendation if available, otherwise create a neutral core entry
+      const rec = claudeTickerMap.get(symbol) ?? {
+        symbol,
+        name: symbol,
+        type: 'etf' as const,
+        bias: 'neutral' as const,
+        rationale: 'Core market instrument included for baseline coverage.',
+        theme: 'Core Universe',
+      };
 
       const detection = detect(candles);
       const { price, change, changePct } = getCurrentPrice(candles);
