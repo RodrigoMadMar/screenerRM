@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const claudeTickerMap = new Map(macro.allTickers.map(t => [t.symbol, t]));
 
     // Score every symbol we have price data for (dynamic + core)
-    for (const [symbol, candles] of priceMap) {
+    for (const [symbol, candles] of Array.from(priceMap.entries())) {
       if (!candles || candles.length < 20) continue;
 
       // Use Claude's recommendation if available, otherwise create a neutral core entry
