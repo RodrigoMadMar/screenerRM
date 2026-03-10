@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     // ── Phase 3: Fetch price data ────────────────────────────────────────────
     // Merge Claude's dynamic tickers with the core universe
     const dynamicSymbols = macro.allTickers.map(t => t.symbol);
-    const allSymbols = Array.from(new Set([...dynamicSymbols, ...CORE_SYMBOLS]));
+    const allSymbols = Array.from(new Set([...dynamicSymbols, ...Array.from(CORE_SYMBOLS)]));
 
     console.log(`[scan] ${dynamicSymbols.length} Claude tickers + ${CORE_SYMBOLS.size} core = ${allSymbols.length} total`);
 
