@@ -1,7 +1,8 @@
 import { Candle } from './types';
 
-const BATCH_SIZE = 5;
-const BATCH_DELAY_MS = 200;
+const BATCH_SIZE = 10;
+const BATCH_DELAY_MS = 0;
+const MAX_TICKERS = 55;
 
 // Browser-like headers to avoid bot detection
 const YF_HEADERS = {
@@ -32,7 +33,7 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
 
       const res = await fetch(url, {
         headers: YF_HEADERS,
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(4000),
       });
 
       if (!res.ok) {
@@ -86,9 +87,9 @@ async function fetchSingleTicker(symbol: string, days = 120): Promise<Candle[] |
 
 export async function fetchPrices(symbols: string[]): Promise<Map<string, Candle[]>> {
   const results = new Map<string, Candle[]>();
-  const unique = Array.from(new Set(symbols));
+  const unique = Array.from(new Set(symbols)).slice(0, MAX_TICKERS);
 
-  console.log(`[prices] Fetching ${unique.length} tickers`);
+  console.log(`[prices] Fetching ${unique.length} tickers (capped at ${MAX_TICKERS})`);
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
@@ -101,7 +102,7 @@ export async function fetchPrices(symbols: string[]): Promise<Map<string, Candle
       }
     }
 
-    if (i + BATCH_SIZE < unique.length) await sleep(BATCH_DELAY_MS);
+    if (BATCH_DELAY_MS > 0 && i + BATCH_SIZE < unique.length) await sleep(BATCH_DELAY_MS);
   }
 
   console.log(`[prices] ${results.size}/${unique.length} succeeded`);
